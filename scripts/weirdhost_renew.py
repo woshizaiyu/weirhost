@@ -447,57 +447,110 @@ def focus_turnstile_area(sb):
         pass
 
 
-def handle_turnstile(sb, timeout=120):
-    """登录阶段 Turnstile：UC 自动 + JS 点击兜底"""
-    if not ts_exists(sb):
-        return True
-    print("[INFO] 检测到 Turnstile，尝试自动解决...")
+def is_cf_challenge_page(sb):
+    """检测是否仍在 Cloudflare 质询页（Managed Challenge）"""
     try:
-        sb.uc_gui_handle_captcha()
-        if ts_solved(sb) or not ts_exists(sb):
-            print("[INFO] 自动解决成功")
+        url = sb.get_current_url() or ""
+        src = sb.get_page_source() or ""
+        # Cloudflare 质询页特征：标题含 Cloudflare / Ray ID / challenges
+        if "challenges.cloudflare.com" in src or "Ray ID:" in src or "Attention Required" in src:
+            return True
+        # 若当前页面标题或 body 仅有 hub.weirdhost.xyz + Cloudflare 标志，多为未过盾
+        title = sb.execute_script("return document.title||''") or ""
+        if "Cloudflare" in title:
             return True
     except Exception:
         pass
-    print("[INFO] 进入 JS 点击兜底...")
+    return False
+
+
+def handle_turnstile(sb, timeout=150):
+    """登录阶段 Turnstile + Cloudflare Managed Challenge：UC 自动 + JS 点击兜底，等待跳出质询页"""
+    # 先等页面加载，若是完整的 CF 质询页则不以 ts_exists 为唯一判断
+    for _ in range(5):
+        if ts_exists(sb) or is_cf_challenge_page(sb):
+            break
+        time.sleep(1)
+    else:
+        return True
+    print("[INFO] 检测到 Turnstile/Cloudflare 验证，尝试自动解决...")
+    try:
+        sb.uc_gui_handle_captcha()
+        # UC 处理后等 5s 看是否已跳出质询页
+        for _ in range(5):
+            time.sleep(1)
+            if not ts_exists(sb) and not is_cf_challenge_page(sb):
+                print("[INFO] UC 自动解决成功，已跳出验证页")
+                return True
+            if ts_solved(sb) and not is_cf_challenge_page(sb):
+                print("[INFO] Turnstile 令牌已生成")
+                time.sleep(2)
+                if not is_cf_challenge_page(sb):
+                    return True
+    except Exception as e:
+        print(f"[WARN] uc_gui_handle_captcha 异常: {e}")
+    print("[INFO] 进入 JS 点击兜底（最长 150s）...")
     start = time.time()
     last_action = 0
     while time.time() - start < timeout:
-        if ts_solved(sb) or not ts_exists(sb):
-            print("[INFO] Turnstile 已通过")
+        if not is_cf_challenge_page(sb) and not ts_exists(sb):
+            print("[INFO] 验证页已消失")
             return True
+        if ts_solved(sb) and not is_cf_challenge_page(sb):
+            print("[INFO] Turnstile 已通过")
+            time.sleep(3)
+            if not is_cf_challenge_page(sb):
+                return True
         expand_turnstile(sb)
         focus_turnstile_area(sb)
         now = time.time()
-        if now - last_action > 4:
+        if now - last_action > 5:
             clicked = False
-            # 1) 尝试 iframe 内 JS 点击
             try:
                 iframes = sb.driver.find_elements("css selector", "iframe")
                 for iframe in iframes:
-                    try:
-                        sb.driver.switch_to.frame(iframe)
-                        for sel in ["input[type='checkbox']", "label.cb-lb", ".cb-lb input", "span.cb-lb"]:
+                    src = iframe.get_attribute("src") or ""
+                    if "cloudflare" in src or "turnstile" in src or "challenges" in src:
+                        try:
+                            sb.driver.switch_to.frame(iframe)
+                            for sel in ["input[type='checkbox']", "label.cb-lb", ".cb-lb input", "span.cb-lb", "div.cb-lb"]:
+                                try:
+                                    elems = sb.driver.find_elements("css selector", sel)
+                                    for elem in elems:
+                                        if elem.is_displayed():
+                                            sb.execute_script("arguments[0].click(); arguments[0].dispatchEvent(new MouseEvent('click',{bubbles:true}));", elem)
+                                            clicked = True
+                                            print(f"[INFO] iframe 内 JS 点击 {sel}")
+                                            break
+                                    if clicked:
+                                        break
+                                except Exception:
+                                    pass
+                            if clicked:
+                                break
+                        except Exception:
+                            pass
+                        finally:
                             try:
-                                elem = sb.driver.find_element("css selector", sel)
-                                if elem.is_displayed():
-                                    sb.execute_script("arguments[0].click();", elem)
-                                    clicked = True
-                                    print(f"[INFO] iframe 内 JS 点击 {sel}")
-                                    break
+                                sb.driver.switch_to.default_content()
                             except Exception:
                                 pass
                         if clicked:
                             break
-                    except Exception:
-                        pass
-                    finally:
-                        sb.driver.switch_to.default_content()
             except Exception:
                 pass
             finally:
                 try:
                     sb.driver.switch_to.default_content()
+                except Exception:
+                    pass
+            # 主文档内也尝试点击可见的 checkbox 区域
+            if not clicked:
+                try:
+                    sb.execute_script("""
+                        var c=document.querySelector('input[type=\"checkbox\"]')||document.querySelector('label.cb-lb')||document.querySelector('.cb-lb');
+                        if(c){c.click(); c.dispatchEvent(new MouseEvent('click',{bubbles:true}));}
+                    """)
                 except Exception:
                     pass
             if not clicked:
@@ -507,8 +560,14 @@ def handle_turnstile(sb, timeout=120):
                 except Exception:
                     pass
             last_action = now
+        # 每 10s 打一次截图便于调试，但不在 CI 刷屏
         time.sleep(2)
     print("[ERROR] Turnstile 处理超时")
+    # 超时前保存现场
+    try:
+        sb.save_screenshot("cf_timeout.png")
+    except Exception:
+        pass
     return False
 
 
