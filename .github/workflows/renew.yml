@@ -33,10 +33,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: 启动家宽代理 (VLESS/SS -> 本地 Socks)
+      - name: 启动家宽代理 (VLESS/Trojan/SS -> 本地 Socks)
         env:
+          NODE_LINK: ${{ secrets.NODE_LINK }}
           VLESS_NODE: ${{ secrets.VLESS_NODE }}
+          TROJAN_NODE: ${{ secrets.TROJAN_NODE }}
           WEIRDHOST_PROXY: ${{ secrets.WEIRDHOST_PROXY }}
+          PROXY_NODE: ${{ secrets.PROXY_NODE }}
         run: |
           python scripts/vless_helper.py
           NEED_PROXY=$(grep -q "socks5://127.0.0.1" "$GITHUB_ENV" 2>/dev/null && echo yes || echo no)
@@ -77,7 +80,10 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           RENEW_THRESHOLD_DAYS: "2"
           WEIRDHOST_PROXY: ${{ secrets.WEIRDHOST_PROXY }}
+          NODE_LINK: ${{ secrets.NODE_LINK }}
           VLESS_NODE: ${{ secrets.VLESS_NODE }}
+          TROJAN_NODE: ${{ secrets.TROJAN_NODE }}
+          PROXY_NODE: ${{ secrets.PROXY_NODE }}
           HTTPS_PROXY: ${{ secrets.HTTPS_PROXY }}
           HTTP_PROXY: ${{ secrets.HTTP_PROXY }}
         run: |
