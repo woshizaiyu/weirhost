@@ -49,6 +49,9 @@ jobs:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           RENEW_THRESHOLD_DAYS: "2"
+          WEIRDHOST_PROXY: ${{ secrets.WEIRDHOST_PROXY }}
+          HTTPS_PROXY: ${{ secrets.HTTPS_PROXY }}
+          HTTP_PROXY: ${{ secrets.HTTP_PROXY }}
         run: |
           xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python scripts/weirdhost_renew.py
 

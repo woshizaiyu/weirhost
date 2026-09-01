@@ -43,6 +43,17 @@ RENEWAL_BUTTON_SELECTORS = [
 
 RENEW_THRESHOLD_DAYS = float(os.environ.get("RENEW_THRESHOLD_DAYS", "2"))
 
+def get_proxy_url():
+    """家宽代理：按优先级读取 WEIRDHOST_PROXY > HTTPS_PROXY > HTTP_PROXY > https_proxy > http_proxy"""
+    for k in ("WEIRDHOST_PROXY", "HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy"):
+        v = os.environ.get(k, "").strip()
+        if v:
+            # 兼容仅 host:port 形式，补 http://
+            if "://" not in v:
+                v = "http://" + v
+            return v
+    return ""
+
 # ============================================================
 #  工具函数
 # ============================================================
@@ -1209,7 +1220,14 @@ def add_server_time():
     print("="*60)
     results = []
     try:
-        with SB(uc=True, test=True, locale="ko", headless=False, chromium_arg="--disable-dev-shm-usage,--no-sandbox,--disable-gpu") as sb:
+        proxy_url = get_proxy_url()
+        chromium_arg = "--disable-dev-shm-usage,--no-sandbox,--disable-gpu"
+        if proxy_url:
+            chromium_arg += f",--proxy-server={proxy_url}"
+            print(f"[INFO] 已启用家宽代理: {proxy_url.split('@')[-1][:30]}***")
+        else:
+            print("[INFO] 未配置代理，直连运行")
+        with SB(uc=True, test=True, locale="ko", headless=False, chromium_arg=chromium_arg) as sb:
             print("\n[INFO] 浏览器已启动")
             for i, account in enumerate(accounts):
                 result = process_single_account(sb, account, i)
