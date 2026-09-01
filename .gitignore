@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+*.log
+
+# Secrets / local
+.env.local
+cookies.txt
+
+# Screenshots / debug
+*.png
+*.jpg
+screenshots/
+debug/
+
+# OS
+.DS_Store
+Thumbs.db
