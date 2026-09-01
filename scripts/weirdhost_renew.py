@@ -553,6 +553,28 @@ def handle_turnstile(sb, timeout=150):
                     """)
                 except Exception:
                     pass
+            # 坐标点击兜底（替代 xdotool）：用 ActionChains 点击 iframe 中心偏移
+            if not clicked:
+                try:
+                    coords = sb.execute_script("""
+                        var ifr=document.querySelector('iframe[src*=\"challenges.cloudflare.com\"]')||document.querySelector('iframe');
+                        if(!ifr) return null;
+                        var r=ifr.getBoundingClientRect();
+                        return {x:r.x, y:r.y, w:r.width, h:r.height};
+                    """)
+                    if coords and coords.get('w',0) > 0:
+                        # 点击 iframe 左侧 30px 处（复刻 oyz8 坐标逻辑）
+                        from selenium.webdriver.common.action_chains import ActionChains
+                        # 先滚到可见
+                        sb.execute_script("arguments[0].scrollIntoView({block:'center'});", sb.driver.find_element("css selector", "iframe"))
+                        time.sleep(0.5)
+                        # 用 ActionChains 在视口坐标点击（selenium 4 支持 move_to_element_with_offset 需元素）
+                        iframe_el = sb.driver.find_element("css selector", "iframe")
+                        ActionChains(sb.driver).move_to_element_with_offset(iframe_el, 30, int(coords['h']/2)).click().perform()
+                        print(f"[INFO] 坐标点击 iframe 偏移 30,{int(coords['h']/2)}")
+                        clicked = True
+                except Exception as e:
+                    print(f"[WARN] 坐标点击失败: {e}")
             if not clicked:
                 try:
                     sb.uc_gui_click_captcha()
@@ -560,7 +582,6 @@ def handle_turnstile(sb, timeout=150):
                 except Exception:
                     pass
             last_action = now
-        # 每 10s 打一次截图便于调试，但不在 CI 刷屏
         time.sleep(2)
     print("[ERROR] Turnstile 处理超时")
     # 超时前保存现场
